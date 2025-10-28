@@ -3,32 +3,263 @@ title: "EV Power - Lab 4 Project Report"
 format: typst
 ---
 
-# Example Solution 1
-
 ## **Part 0: libraries**
 
 ```{r}
-
+#| echo: False
+library(tidyverse)
+library(maps)
 ```
 
 ## **Part 1:** **Defining Research Question**
 
-Chosen Question:
+Chosen Question: Is there a pattern in the dominant energy source in the top 10 electric vehicle registration states?
+
+Overview: This research question investigates the relationship between the top 10 state's primary energy source and electric vehicle registration. The findings will contribute to the main research question which asks if the electricity used to power EVs is from clean sources because it'll investigate what the main energy source is in the top ten states of EV registrations.
 
 ## **Part 2: Data Preparation and Cleaning**
 
 ```{r}
+#| echo: False
+#Load Datasets
+renew_2021 <- read.csv("data/renew-use-2021.csv")
+renew_2022 <- read.csv("data/renew-use-2022.csv")
+renew_2023 <- read.csv("data/renew-use-2023.csv")
+total_2021 <- read.csv("data/total-use-2021.csv")
+total_2022 <- read.csv("data/total-use-2022.csv")
+total_2023 <- read.csv("data/total-use-2023.csv")
+av_price_2023 <- read.csv("data/av-energy-price-2021-2023.csv")
+ev_reg_state_2023 <- read.csv("data/ev-registrations-by-state-2023.csv")
+
+#Standardize state names to State's full name
+#take states' full names from EV reg data set
+ev_reg_state_2023 <- ev_reg_state_2023 |>
+  slice(-(c(1:2, 54)))
+colnames(ev_reg_state_2023) <- c("State", "EV_Reg_Count")
+state_names <- ev_reg_state_2023$State
+
+#take state abbreviations
+state_abbrevs <- renew_2021 |>
+  select(State) |>
+  group_by(State) |>
+  distinct()
+
+#create a reference table with state abbreviations and full state names -- clean mismatches too
+state_name_ref <- data.frame("Full" = state_names, "Abbreviation" = state_abbrevs[state_abbrevs != "US"])
+
+state_name_ref$Abbreviation[1] <- state_name_ref$Abbreviation[2]
+state_name_ref$Abbreviation[2] <- "AK"
+state_name_ref$Abbreviation[3] <- state_name_ref$Abbreviation[4]
+state_name_ref$Abbreviation[4] <- "AR"
+state_name_ref$Abbreviation[8] <- "DE"
+state_name_ref$Abbreviation[9] <- "DC"
+state_name_ref$Abbreviation[13] <- "ID"
+state_name_ref$Abbreviation[14] <- "IL"
+state_name_ref$Abbreviation[15] <- "IN"
+state_name_ref$Abbreviation[16] <- "IA"
+state_name_ref$Abbreviation[20] <- "ME"
+state_name_ref$Abbreviation[22] <- "MA"
+state_name_ref$Abbreviation[25] <- "MS"
+state_name_ref$Abbreviation[26] <- "MO"
+state_name_ref$Abbreviation[28] <- "NE"
+state_name_ref$Abbreviation[29] <- "NV"
+state_name_ref$Abbreviation[30] <- "NH"
+state_name_ref$Abbreviation[31] <- "NJ"
+state_name_ref$Abbreviation[32] <- "NM"
+state_name_ref$Abbreviation[33] <- "NY"
+state_name_ref$Abbreviation[34] <- "NC"
+state_name_ref$Abbreviation[35] <- "ND"
+state_name_ref$Abbreviation[46] <- "VT"
+state_name_ref$Abbreviation[47] <- "VA"
+state_name_ref$Abbreviation[49] <- "WV"
+state_name_ref$Abbreviation[50] <- "WI"
+
+head(state_name_ref)
+
+#apply states' full names to renew energy use datasets -- end up not using 
+
+renew_2021 = renew_2021 |>
+  slice(-(256:260)) |>
+  left_join(state_name_ref, by = c("State" = "Abbreviation")) |>
+  select(c("Full", "Energy_Source", "Renewable_Use_2021")) |>
+  rename("State" = "Full")
+
+renew_2022 = renew_2022 |>
+  slice(-(256:260)) |>
+  left_join(state_name_ref, by = c("State" = "Abbreviation")) |>
+  select(c("Full", "Energy_Source", "Renewable_Use_2022")) |>
+  rename("State" = "Full")
+
+renew_2023 = renew_2023 |>
+  slice(-(256:260)) |>
+  mutate(State = toupper(State)) |>
+  left_join(state_name_ref, by = c("State" = "Abbreviation")) |>
+  select(c("Full", "Energy_Source", "Renewable_Use_2023")) |>
+  rename("State" = "Full")
+
+#apply states' full names to total energy use datasets, only have 51 states (including DC), change all energy names to lower
+total_2021 = total_2021 |>
+  pivot_longer(cols = 2:53, names_to = "State", values_to = "Total_Use_2021") |>
+  arrange(State) |>
+  left_join(state_name_ref, by = c("State" = "Abbreviation")) |>
+  select("Full", "Energy_Source", "Total_Use_2021") |>
+  rename("State" = "Full") |>
+  filter(!is.na(State)) |>
+  mutate(Energy_Source = tolower(Energy_Source))
+
+total_2022 = total_2022 |>
+  pivot_longer(cols = 2:53, names_to = "State", values_to = "Total_Use_2022") |>
+  arrange(State) |>
+  left_join(state_name_ref, by = c("State" = "Abbreviation")) |>
+  select("Full", "Energy_Source", "Total_Use_2022") |>
+  rename("State" = "Full") |>
+  filter(!is.na(State)) |>
+  mutate(Energy_Source = tolower(Energy_Source))
+
+total_2023 = total_2023 |>
+  pivot_longer(cols = 2:53, names_to = "State", values_to = "Total_Use_2023") |>
+  arrange(State) |>
+  left_join(state_name_ref, by = c("State" = "Abbreviation")) |>
+  select("Full", "Energy_Source", "Total_Use_2023") |>
+  rename("State" = "Full") |>
+  filter(!is.na(State)) |>
+  mutate(Energy_Source = tolower(Energy_Source))
+
+#cleaning the EV registration Count column to only include numeric counts
+ev_reg_state_2023 = ev_reg_state_2023 |>
+  mutate("Registration_Count_2023" = str_extract(EV_Reg_Count, "[0-9]+")) |>
+  select(-(EV_Reg_Count))
 
 ```
 
 ## **Part 3: Joining / Pivoting Datasets for Analysis**
 
 ```{r}
+#| echo: False
+#mutating a proportion col to each total energy df, only keeping the top energy source for each state
+top_source_2021 = total_2021 |>
+  group_by(State) |>
+  mutate("Energy_Prop_in_State_2021" = Total_Use_2021 / sum(Total_Use_2021)) |>
+  arrange(State, desc(Energy_Prop_in_State_2021)) |>
+  slice(1)
+
+top_source_2022 = total_2022 |>
+  group_by(State) |>
+  mutate("Energy_Prop_in_State_2022" = Total_Use_2022 / sum(Total_Use_2022)) |>
+  arrange(State, desc(Energy_Prop_in_State_2022)) |>
+  slice(1)
+
+top_source_2023 = total_2023 |>
+  group_by(State) |>
+  mutate("Energy_Prop_in_State_2023" = Total_Use_2023 / sum(Total_Use_2023)) |>
+  arrange(State, desc(Energy_Prop_in_State_2023)) |>
+  slice(1)
+
+head(top_source_2023)
+
+#joining State, energy source, energy_prop
+ev_energy_props = ev_reg_state_2023 |>
+  left_join(top_source_2021, by = "State") |>
+  left_join(top_source_2022, by = "State") |>
+  left_join(top_source_2023, by = "State") |>
+  select(-c(Energy_Source.y, Energy_Source.x))
+
+#creating a df with the raw counts of each state's primary energy source just in case I want to see if there's an increase -- although I could do this with proportion too
+energy_base_count_per_year = ev_energy_props |>
+  select(c(State, Total_Use_2021, Total_Use_2022, Total_Use_2023))
+
+#cleaning up the joined table more -- only focusing on 2023 and proportions of EV relative to all states
+ev_energy_props = ev_energy_props|>
+  select(c(State, Registration_Count_2023, Energy_Source, Energy_Prop_in_State_2023)) |>
+  mutate(Registration_Count_2023 = as.double(Registration_Count_2023)) |>
+  mutate("Prop_EV" = Registration_Count_2023 / sum(Registration_Count_2023)) |>
+  select(-Registration_Count_2023)
+
 
 ```
 
 ## **Part 4: Mapping Visualization**
 
 ```{r}
+#| echo: False
+#creating a map that shows the most used energy source per state and highlights the ten states with the highest proportion of EVs
+us_map <- map_data("state")
 
+#add lower case version of states to state_name_ref to join with map data -- only looking at contiguous US now, dropping Hawaii and Alaska
+lower_case_names <- us_map |>
+  select(region) |>
+  group_by(region) |>
+  distinct()
+
+state_name_ref = state_name_ref|>
+  filter(! Full %in% c("Hawaii", "Alaska")) |>
+  mutate("lower" = lower_case_names$region)
+
+#combine map data with focused ev and energy data
+ev_energy_props = ev_energy_props |>
+  filter(! State %in% c("Hawaii", "Alaska")) |>
+  left_join(state_name_ref, by = c("State" = "Full")) |>
+  left_join(us_map, by = c("lower" = "region")) |>
+  select(-c(subregion, lower, Abbreviation))
+
+#finding the five states with the highest EV registration proportions
+
+ev_energy_props |>
+  select(State, Prop_EV) |>
+  group_by(State) |>
+  mutate(prop_again = max(Prop_EV)) |>
+  distinct() |>
+  arrange(desc(Prop_EV)) 
+
+top_ten = c("California", "Florida", "Texas", "Washington", "New Jersey", "New York", "Illinois", "Georgia", "Colorado", "Arizona")
+
+top10 <- data.frame("State" = top_ten, "Rank" = 1:10)
+
+state_centroids <- us_map |>
+  group_by(region) |>
+  summarize(lon = mean(range(long, na.rm = T)), 
+            lat = mean(range(lat, na.rm = T))
+            ) |>
+  rename(State = region)
+
+#add top five states lon and lat for label placement
+top10 = top10 |>
+  left_join(state_name_ref, by = c("State" = "Full")) |>
+  left_join(state_centroids, by = c("lower" = "State")) |>
+  select(-c(Abbreviation, lower))
+
+#add circled number labels for map
+circled_numbers <- c("①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨", "⑩")
+top10 = top10 |>
+  mutate("circled_rank" = circled_numbers)
+
+#add color contrast fixing for labels
+ev_energy_props = ev_energy_props|> 
+  mutate(label_color = ifelse(Energy_Source %in% c("naturalgas", "coal_usage"), "white", "black"))
+
+top10 = top10 |>
+  left_join(ev_energy_props, by = c("State")) |>
+  select(c(State, lon, lat.x, circled_rank, label_color))
+
+#map the contiguous US
+ev_energy_props |>
+  ggplot() +
+  geom_polygon(aes(x = long, y = lat, group = group, fill = Energy_Source), color = "white") +
+  geom_text(data = top10, aes(x = lon, y = lat.x, label = circled_rank, color = label_color), size = 5, fontface = "bold") +
+  scale_color_manual(values = c("black" = "black", "white" = "white")) +
+guides(color = "none") +
+  coord_fixed(1.3) +
+  scale_fill_viridis_d(option = "B",
+                       labels = c(
+                         "coal_usage" = "Coal", 
+                         "naturalgas" = "Natural Gas", 
+                         "nuclear-energy †" = "Nuclear Energy", 
+                         "petroleum (btu)" = "Petroleum", 
+                         "total renewable-energy" = "Renewable Energy")) +
+  theme_void() +
+  labs(title = "80% of Top 10 EV States Still Rely on Petroleum as Primary Energy Source", fill = "Top Energy Source")
 ```
+
+### Analysis
+
+From the map, we see that 80% of the top ten EV registration states still rely on petroleum as their primary energy source. While this is an observable pattern from the map, it is reasonable to assume there are other factors contributing to the states' use and/or reliance on petroleum. Factors could be these states have higher populations, so there's more demand for energy which is more reliably provided from petroleum sources.The 6th and 9th highest EV registration states having their primary energy source be natural gas provide alternative cases to investigate the scenario of how other states can rely on another energy source than petroleum. While this investigation did not include the annual price for different energy sources, perhaps the states with the higher EV registration counts generally have more money which can influence the primary energy source. But as this map shows, the primary energy source in the states with the higher EV registration still tends to be unclean, petroleum. There is some indication that the energy that provides the electricity for EVs is not clean in the states with the highest EV registration counts, but there is no direct relationship claimed here.
